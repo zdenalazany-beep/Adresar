@@ -1,493 +1,295 @@
-// ============================================================
-// ADRESÁŘ - hlavní JavaScript aplikace
-// ============================================================
-
-// URL webové aplikace Google Apps Script.
-// Tuto hodnotu už není potřeba měnit.
-const API_URL =
-    "https://script.google.com/macros/s/AKfycbyWgVtd8AZYNQAUa8w9cNw4VtvUJ-AviCfyknaKTLIptpLAVZXbZM5C3eVcP1RRm5zPhA/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbyWgVtd8AZYNQAUa8w9cNw4VtvUJ-AviCfyknaKTLIptlPAVZXbZM5C3eVcP1RRm5zPhA/exec";
 
 let contacts = [];
+let currentPhotoFile = null;
 
-// ------------------------------------------------------------
-// Pomocné funkce
-// ------------------------------------------------------------
-
-function esc(value) {
-    return String(value ?? "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
+function $(id) {
+  return document.getElementById(id);
 }
 
-function tel(phone) {
-    if (!phone) {
-        return "#";
-    }
-
-    return `tel:${String(phone).replace(/[^+\d]/g, "")}`;
+function getDriveFileId(url) {
+  const s = String(url || "");
+  let m = s.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (m) return m[1];
+  m = s.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : "";
 }
 
-function mail(email) {
-    if (!email) {
-        return "#";
-    }
-
-    return `mailto:${encodeURIComponent(email)}`;
+function getPhotoUrl(url) {
+  const id = getDriveFileId(url);
+  return id ? `https://drive.google.com/thumbnail?id=${id}&sz=w600` : (url || "");
 }
 
-function map(address, city, zip) {
-    const text = [address, zip, city]
-        .filter(Boolean)
-        .join(", ");
+function photoError(img) {
+  const id = img.dataset.fileId || getDriveFileId(img.dataset.original || img.src);
+  if (!id) {
+    img.style.display = "none";
+    return;
+  }
 
-    if (!text) {
-        return "#";
-    }
+  const attempt = Number(img.dataset.attempt || "0") + 1;
+  img.dataset.attempt = String(attempt);
 
-    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(text)}`;
+  if (attempt === 1) {
+    img.src = `https://drive.google.com/uc?export=view&id=${id}`;
+  } else {
+    img.style.display = "none";
+  }
 }
 
-function photoUrl(url) {
-    if (!url) {
-        return "";
-    }
+function resetForm() {
+  const form = $("contactForm");
+  if (form) form.reset();
 
-    // Apps Script může vracet přímo thumbnail URL.
-    return url;
-}
+  if ($("contactId")) $("contactId").value = "";
+  currentPhotoFile = null;
 
-// ------------------------------------------------------------
-// Načtení kontaktů
-// ------------------------------------------------------------
-
-async function loadData() {
-    setStatus("Načítám kontakty...");
-
-    try {
-        const response = await fetch(`${API_URL}?action=list`, {
-            method: "GET",
-            cache: "no-store"
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        if (!Array.isArray(data)) {
-            throw new Error("API nevrátilo seznam kontaktů.");
-        }
-
-        contacts = data;
-        render();
-
-        setStatus(`Načteno kontaktů: ${contacts.length}`);
-    } catch (error) {
-        console.error(error);
-        setStatus(`Chyba při načítání: ${error.message}`, true);
-    }
-}
-
-// ------------------------------------------------------------
-// Vykreslení
-// ------------------------------------------------------------
-
-function render() {
-    const search = document
-        .getElementById("searchInput")
-        .value
-        .trim()
-        .toLowerCase();
-
-    const filtered = contacts.filter(contact => {
-        const text = [
-            contact.name,
-            contact.surname,
-            contact.phone,
-            contact.phone2,
-            contact.email,
-            contact.code,
-            contact.zip,
-            contact.city,
-            contact.address,
-            contact.note
-        ]
-            .join(" ")
-            .toLowerCase();
-
-        return text.includes(search);
-    });
-
-    renderTable(filtered);
-    renderMobile(filtered);
-}
-
-function renderTable(list) {
-    const body = document.getElementById("contactsBody");
-
-    if (list.length === 0) {
-        body.innerHTML = `
-            <tr>
-                <td colspan="7">Žádné kontakty.</td>
-            </tr>
-        `;
-        return;
-    }
-
-    body.innerHTML = list.map(contact => {
-        const fullName = [contact.name, contact.surname]
-            .filter(Boolean)
-            .join(" ");
-
-        const address = [contact.address, contact.zip, contact.city]
-            .filter(Boolean)
-            .join(", ");
-
-        const image = contact.photo
-            ? `<img class="thumb" src="${esc(photoUrl(contact.photo))}" alt="">`
-            : `<div class="thumb"></div>`;
-
-        return `
-            <tr>
-                <td>${image}</td>
-                <td><strong>${esc(fullName)}</strong></td>
-                <td>
-                    ${contact.phone
-                        ? `<a href="${esc(tel(contact.phone))}">${esc(contact.phone)}</a>`
-                        : ""}
-                    ${contact.phone2
-                        ? `<br><a href="${esc(tel(contact.phone2))}">${esc(contact.phone2)}</a>`
-                        : ""}
-                </td>
-                <td>
-                    ${address
-                        ? `<a href="${esc(map(contact.address, contact.city, contact.zip))}" target="_blank" rel="noopener">${esc(address)}</a>`
-                        : ""}
-                </td>
-                <td>
-                    ${contact.email
-                        ? `<a href="${esc(mail(contact.email))}">${esc(contact.email)}</a>`
-                        : ""}
-                </td>
-                <td>${esc(contact.code)}</td>
-                <td>
-                    <div class="actions">
-                        <button class="secondary-button action-button" onclick="editContact('${esc(contact.id)}')">
-                            Upravit
-                        </button>
-                        <button class="danger-button action-button" onclick="deleteContact('${esc(contact.id)}')">
-                            Smazat
-                        </button>
-                    </div>
-                </td>
-            </tr>
-        `;
-    }).join("");
-}
-
-function renderMobile(list) {
-    const container = document.getElementById("mobileList");
-
-    if (list.length === 0) {
-        container.innerHTML = '<div class="contact-card">Žádné kontakty.</div>';
-        return;
-    }
-
-    container.innerHTML = list.map(contact => {
-        const fullName = [contact.name, contact.surname]
-            .filter(Boolean)
-            .join(" ");
-
-        const address = [contact.address, contact.zip, contact.city]
-            .filter(Boolean)
-            .join(", ");
-
-        const image = contact.photo
-            ? `<img class="thumb" src="${esc(photoUrl(contact.photo))}" alt="">`
-            : `<div class="thumb"></div>`;
-
-        return `
-            <article class="contact-card">
-                <div class="card-top">
-                    ${image}
-                    <div class="card-name">${esc(fullName)}</div>
-                </div>
-
-                <div class="card-details">
-                    ${contact.phone
-                        ? `📞 <a href="${esc(tel(contact.phone))}">${esc(contact.phone)}</a><br>`
-                        : ""}
-                    ${contact.phone2
-                        ? `📞 <a href="${esc(tel(contact.phone2))}">${esc(contact.phone2)}</a><br>`
-                        : ""}
-                    ${contact.email
-                        ? `✉️ <a href="${esc(mail(contact.email))}">${esc(contact.email)}</a><br>`
-                        : ""}
-                    ${address
-                        ? `📍 <a href="${esc(map(contact.address, contact.city, contact.zip))}" target="_blank" rel="noopener">${esc(address)}</a><br>`
-                        : ""}
-                    ${contact.code
-                        ? `Kód: ${esc(contact.code)}<br>`
-                        : ""}
-                    ${contact.note
-                        ? `📝 ${esc(contact.note)}`
-                        : ""}
-                </div>
-
-                <div class="card-actions">
-                    <button class="secondary-button" onclick="editContact('${esc(contact.id)}')">
-                        Upravit
-                    </button>
-                    <button class="danger-button" onclick="deleteContact('${esc(contact.id)}')">
-                        Smazat
-                    </button>
-                </div>
-            </article>
-        `;
-    }).join("");
-}
-
-// ------------------------------------------------------------
-// Formulář
-// ------------------------------------------------------------
-
-function openForm(contact = null) {
-    document.getElementById("modal").classList.remove("hidden");
-    document.getElementById("contactForm").reset();
-
-    document.getElementById("contactId").value = "";
-    document.getElementById("photoPreview").classList.add("hidden");
-    document.getElementById("photoPreview").removeAttribute("src");
-
-    if (!contact) {
-        document.getElementById("modalTitle").textContent = "Nový kontakt";
-        return;
-    }
-
-    document.getElementById("modalTitle").textContent = "Upravit kontakt";
-
-    document.getElementById("contactId").value = contact.id;
-    document.getElementById("name").value = contact.name || "";
-    document.getElementById("surname").value = contact.surname || "";
-    document.getElementById("phone").value = contact.phone || "";
-    document.getElementById("phone2").value = contact.phone2 || "";
-    document.getElementById("email").value = contact.email || "";
-    document.getElementById("code").value = contact.code || "";
-    document.getElementById("zip").value = contact.zip || "";
-    document.getElementById("city").value = contact.city || "";
-    document.getElementById("address").value = contact.address || "";
-    document.getElementById("note").value = contact.note || "";
-
-    if (contact.photo) {
-        const preview = document.getElementById("photoPreview");
-        preview.src = photoUrl(contact.photo);
-        preview.classList.remove("hidden");
-    }
+  const preview = $("photoPreview");
+  if (preview) {
+    preview.classList.add("hidden");
+    preview.removeAttribute("src");
+  }
 }
 
 function closeForm() {
-    document.getElementById("modal").classList.add("hidden");
+  resetForm();
+  const modal = $("modal");
+  if (modal) modal.classList.add("hidden");
+}
+
+function openForm(contact = null) {
+  const modal = $("modal");
+  if (!modal) return;
+
+  resetForm();
+
+  if (contact) {
+    $("contactId").value = contact.id || "";
+    $("name").value = contact.name || "";
+    $("surname").value = contact.surname || "";
+    $("phone").value = contact.phone || "";
+    $("phone2").value = contact.phone2 || "";
+    $("email").value = contact.email || "";
+    $("code").value = contact.code || "";
+    $("zip").value = contact.zip || "";
+    $("city").value = contact.city || "";
+    $("address").value = contact.address || "";
+    $("note").value = contact.note || "";
+
+    if (contact.photo) {
+      const preview = $("photoPreview");
+      preview.src = getPhotoUrl(contact.photo);
+      preview.dataset.fileId = getDriveFileId(contact.photo);
+      preview.dataset.original = contact.photo;
+      preview.classList.remove("hidden");
+      preview.onerror = () => photoError(preview);
+    }
+  }
+
+  modal.classList.remove("hidden");
+}
+
+async function loadData() {
+  const container = $("contactsContainer");
+  if (container) container.innerHTML = "<p>Nańć??t?°m‚Ä¶</p>";
+
+  try {
+    const response = await fetch(API_URL + "?action=list", { cache: "no-store" });
+    if (!response.ok) throw new Error("HTTP " + response.status);
+
+    contacts = await response.json();
+    render();
+  } catch (err) {
+    console.error(err);
+    if (container) {
+      container.innerHTML = `<p class="error">NepodaŇôilo se nańć??st kontakty: ${escapeHtml(err.message)}</p>`;
+    }
+  }
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function render() {
+  const container = $("contactsContainer");
+  if (!container) return;
+
+  if (!contacts.length) {
+    container.innerHTML = '<div class="contact-card">ŇĹ?°dn?© kontakty.</div>';
+    return;
+  }
+
+  container.innerHTML = contacts.map(c => {
+    const fileId = getDriveFileId(c.photo);
+    const photo = c.photo
+      ? `<img class="contact-photo" src="${escapeHtml(getPhotoUrl(c.photo))}" data-file-id="${escapeHtml(fileId)}" data-original="${escapeHtml(c.photo)}" onerror="photoError(this)" alt="">`
+      : "";
+
+    return `
+      <div class="contact-card" data-id="${escapeHtml(c.id)}">
+        ${photo}
+        <div class="contact-main">
+          <div class="contact-name">${escapeHtml([c.name, c.surname].filter(Boolean).join(" "))}</div>
+          ${c.phone ? `<div>uüďě ${escapeHtml(c.phone)}</div>` : ""}
+          ${c.phone2 ? `<div>uüďě ${escapeHtml(c.phone2)}</div>` : ""}
+          ${c.email ? `<div>‚úČÔłŹ ${escapeHtml(c.email)}</div>` : ""}
+          ${c.city || c.address ? `<div>uüďć ${escapeHtml([c.city, c.address].filter(Boolean).join(", "))}</div>` : ""}
+          ${c.note ? `<div>${escapeHtml(c.note)}</div>` : ""}
+        </div>
+        <div class="contact-actions">
+          <button type="button" onclick="editContact('${escapeHtml(c.id)}')">Upravit</button>
+          <button type="button" onclick="deleteContact('${escapeHtml(c.id)}')">Smazat</button>
+        </div>
+      </div>
+    `;
+  }).join("");
 }
 
 function editContact(id) {
-    const contact = contacts.find(item => String(item.id) === String(id));
-
-    if (!contact) {
-        alert("Kontakt nebyl nalezen.");
-        return;
-    }
-
-    openForm(contact);
+  const contact = contacts.find(c => String(c.id) === String(id));
+  if (contact) openForm(contact);
 }
 
-// ------------------------------------------------------------
-// Fotografie
-// ------------------------------------------------------------
+async function uploadPhoto(file) {
+  const reader = new FileReader();
 
-function readFileAsBase64(file) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
+  const base64 = await new Promise((resolve, reject) => {
+    reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 
-        reader.onload = () => {
-            const result = String(reader.result || "");
-            const comma = result.indexOf(",");
+  const response = await fetch(API_URL, {
+    method: "POST",
+    body: JSON.stringify({
+      action: "uploadPhoto",
+      fileName: file.name,
+      mimeType: file.type,
+      data: base64
+    })
+  });
 
-            resolve(comma >= 0 ? result.slice(comma + 1) : result);
-        };
-
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-    });
+  if (!response.ok) throw new Error("Nahr?°n?? fotografie selhalo.");
+  const result = await response.json();
+  if (!result.success) throw new Error(result.error || "Nahr?°n?? fotografie selhalo.");
+  return result.url;
 }
-
-// ------------------------------------------------------------
-// Uložení
-// ------------------------------------------------------------
 
 async function saveContact(event) {
-    event.preventDefault();
+  event.preventDefault();
 
-    const id = document.getElementById("contactId").value.trim();
-    const file = document.getElementById("photoFile").files[0];
+  const button = $("saveButton");
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Ukl?°d?°m‚Ä¶";
+  }
+
+  try {
+    let photoUrl = "";
+    const photoInput = $("photo");
+
+    if (photoInput && photoInput.files && photoInput.files[0]) {
+      photoUrl = await uploadPhoto(photoInput.files[0]);
+    }
 
     const data = {
-        action: id ? "update" : "create",
-        id,
-        name: document.getElementById("name").value.trim(),
-        surname: document.getElementById("surname").value.trim(),
-        phone: document.getElementById("phone").value.trim(),
-        phone2: document.getElementById("phone2").value.trim(),
-        email: document.getElementById("email").value.trim(),
-        code: document.getElementById("code").value.trim(),
-        zip: document.getElementById("zip").value.trim(),
-        city: document.getElementById("city").value.trim(),
-        address: document.getElementById("address").value.trim(),
-        note: document.getElementById("note").value.trim()
+      action: $("contactId").value ? "update" : "create",
+      id: $("contactId").value,
+      name: $("name").value.trim(),
+      surname: $("surname").value.trim(),
+      phone: $("phone").value.trim(),
+      phone2: $("phone2").value.trim(),
+      email: $("email").value.trim(),
+      code: $("code").value.trim(),
+      zip: $("zip").value.trim(),
+      city: $("city").value.trim(),
+      address: $("address").value.trim(),
+      note: $("note").value.trim(),
+      photo: photoUrl
     };
 
-    if (file) {
-        data.photoData = await readFileAsBase64(file);
-        data.photoName = file.name;
-        data.photoType = file.type || "image/jpeg";
+    const response = await fetch(API_URL, {
+      method: "POST",
+      body: JSON.stringify(data)
+    });
+
+    if (!response.ok) throw new Error("HTTP " + response.status);
+
+    const result = await response.json();
+    if (!result.success) throw new Error(result.error || "UloŇĺen?? se nezdaŇôilo.");
+
+    // DŇIleŇĺit?©: po ?lspńoŇ°n?©m uloŇĺen?? formul?°Ňô vyńćistit A zavŇô??t.
+    resetForm();
+    closeForm();
+    await loadData();
+
+  } catch (err) {
+    console.error(err);
+    alert("Chyba: " + err.message);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "UloŇĺit";
     }
-
-    setStatus("Ukládám...");
-
-    try {
-        const response = await fetch(API_URL, {
-            method: "POST",
-            headers: {
-                "Content-Type": "text/plain;charset=utf-8"
-            },
-            body: JSON.stringify(data)
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
-
-        const result = await response.json();
-
-        if (!result.ok) {
-            throw new Error(result.error || "Uložení se nezdařilo.");
-        }
-
-        document.getElementById("contactForm").reset();
-        document.getElementById("photoPreview").classList.add("hidden");
-        document.getElementById("photoPreview").removeAttribute("src");
-
-        closeForm();
-        await loadData();
-    } catch (error) {
-        console.error(error);
-        setStatus(`Chyba při ukládání: ${error.message}`, true);
-    }
+  }
 }
-
-// ------------------------------------------------------------
-// Mazání
-// ------------------------------------------------------------
 
 async function deleteContact(id) {
-    const contact = contacts.find(item => String(item.id) === String(id));
+  if (!confirm("Opravdu smazat tento kontakt?")) return;
 
-    if (!contact) {
-        return;
-    }
+  try {
+    const response = await fetch(API_URL, {
+      method: "POST",
+      body: JSON.stringify({ action: "delete", id })
+    });
 
-    const name = [contact.name, contact.surname]
-        .filter(Boolean)
-        .join(" ");
+    const result = await response.json();
+    if (!result.success) throw new Error(result.error || "Maz?°n?? se nezdaŇôilo.");
 
-    if (!confirm(`Opravdu chcete smazat kontakt „${name}“?`)) {
-        return;
-    }
-
-    setStatus("Mažu kontakt...");
-
-    try {
-        const response = await fetch(API_URL, {
-            method: "POST",
-            headers: {
-                "Content-Type": "text/plain;charset=utf-8"
-            },
-            body: JSON.stringify({
-                action: "delete",
-                id
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
-
-        const result = await response.json();
-
-        if (!result.ok) {
-            throw new Error(result.error || "Mazání se nezdařilo.");
-        }
-
-        await loadData();
-    } catch (error) {
-        console.error(error);
-        setStatus(`Chyba při mazání: ${error.message}`, true);
-    }
+    await loadData();
+  } catch (err) {
+    alert("Chyba: " + err.message);
+  }
 }
 
-// ------------------------------------------------------------
-// Stavová zpráva
-// ------------------------------------------------------------
+function setup() {
+  const newButton = $("newContact");
+  if (newButton) newButton.addEventListener("click", () => openForm());
 
-function setStatus(message, isError = false) {
-    const status = document.getElementById("status");
+  const closeButton = $("closeForm");
+  if (closeButton) closeButton.addEventListener("click", closeForm);
 
-    status.textContent = message;
-    status.style.color = isError ? "#b91c1c" : "#6b7280";
-}
+  const cancelButton = $("cancelForm");
+  if (cancelButton) cancelButton.addEventListener("click", closeForm);
 
-// ------------------------------------------------------------
-// Události
-// ------------------------------------------------------------
+  const form = $("contactForm");
+  if (form) form.addEventListener("submit", saveContact);
 
-document.getElementById("newButton").addEventListener("click", () => {
-    openForm();
-});
+  const photoInput = $("photo");
+  if (photoInput) {
+    photoInput.addEventListener("change", () => {
+      const file = photoInput.files && photoInput.files[0];
+      const preview = $("photoPreview");
+      if (!preview) return;
 
-document.getElementById("closeButton").addEventListener("click", closeForm);
-document.getElementById("cancelButton").addEventListener("click", closeForm);
-
-document.getElementById("reloadButton").addEventListener("click", loadData);
-
-document.getElementById("searchInput").addEventListener("input", render);
-
-document.getElementById("contactForm").addEventListener("submit", saveContact);
-
-document.getElementById("photoFile").addEventListener("change", event => {
-    const file = event.target.files[0];
-    const preview = document.getElementById("photoPreview");
-
-    if (!file) {
+      if (!file) {
         preview.classList.add("hidden");
         preview.removeAttribute("src");
         return;
-    }
+      }
 
-    preview.src = URL.createObjectURL(file);
-    preview.classList.remove("hidden");
-});
+      preview.src = URL.createObjectURL(file);
+      preview.classList.remove("hidden");
+    });
+  }
 
-document.getElementById("modal").addEventListener("click", event => {
-    if (event.target.id === "modal") {
-        closeForm();
-    }
-});
+  loadData();
+}
 
-// ------------------------------------------------------------
-// Start aplikace
-// ------------------------------------------------------------
-
-loadData();
+document.addEventListener("DOMContentLoaded", setup);
