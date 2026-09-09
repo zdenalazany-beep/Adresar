@@ -376,6 +376,10 @@ async function saveContact(event) {
             throw new Error(result.error || "Uložení se nezdařilo.");
         }
 
+        document.getElementById("contactForm").reset();
+        document.getElementById("photoPreview").classList.add("hidden");
+        document.getElementById("photoPreview").removeAttribute("src");
+
         closeForm();
         await loadData();
     } catch (error) {
