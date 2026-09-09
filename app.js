@@ -193,7 +193,7 @@ function renderMobile(list) {
     const container = document.getElementById("mobileList");
 
     if (list.length === 0) {
-        container.innerHTML = "<div class="contact-card">Žádné kontakty.</div>";
+        container.innerHTML = '<div class="contact-card">Žádné kontakty.</div>';
         return;
     }
 
