@@ -1,5 +1,4 @@
-const API_URL = "https://script.google.com/macros/s/AKfycbyWgVtd8AZYNQAUa8w9cNw4VtvUJ-AviCfyknaKTLIptlPAVZXbZM5C3eVcP1RRm5zPhA/exec";
-
+const API_URL = "https://script.google.com/macros/s/AKfycbyWgVtd8AZYNQAUa8w9cNw4VtvUJ-AviCfyknaKTLIptpLAVZXbZM5C3eVcP1RRm5zPhA/exec";
 let contacts = [];
 let currentPhotoFile = null;
 
